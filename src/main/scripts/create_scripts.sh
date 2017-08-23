@@ -141,6 +141,21 @@ if [[ "\$*" =~ " -emit-executable " ]]; then
     LINKER_ARGS="-Xlinker -shared -Xlinker -export-dynamic -tools-directory \$SWIFT_INSTALL/usr/$ARCH"
 fi
 
+// .xctest
+if [[ "\$*" =~ "-Xlinker -bundle" ]]; then
+    xctest_bundle=\$(echo $ARGS | grep -o \$(pwd)'[^[:space:]]*xctest')
+    rm -rf \$xctest_bundle
+
+    build_dir=\$(echo "\$ARGS" | grep -o '\-L '\$(pwd)'/.build/[^[:space:]]*' | sed -E "s@-L @@")
+
+    ARGS=\$(echo "\$ARGS" | sed -E "s@-Xlinker -bundle@-emit-executable@")
+    ARGS=\$(echo "\$ARGS" | sed -E "s@xctest[^[:space:]]*PackageTests@xctest@")
+
+    ARGS="\$ARGS -I \$build_dir Tests/LinuxMain.swift"
+
+    LINKER_ARGS="-Xlinker -pie -tools-directory \$SWIFT_INSTALL/usr/$ARCH"
+fi
+
 swiftc -target armv7-none-linux-androideabi \\
     -sdk "\$SWIFT_INSTALL/ndk-android-21" -L "\$SWIFT_INSTALL/usr/$ARCH" \\
     \$LINKER_ARGS \$ARGS || (echo "*** Error executing: \$0 \$LINKER_ARGS \$ARGS" && exit 1)
