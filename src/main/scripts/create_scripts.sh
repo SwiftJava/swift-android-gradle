@@ -42,21 +42,24 @@ if [[ ! -f "$GLIBC_MODULEMAP.orig" ]]; then
     cp "$GLIBC_MODULEMAP" "$GLIBC_MODULEMAP.orig"
 fi &&
 
-sed -e "s@/usr/local/android/ndk/platforms/android-21/arch-arm/@$SWIFT_INSTALL/ndk-android-21@" <"$GLIBC_MODULEMAP.orig" >"$GLIBC_MODULEMAP" &&
+sed -e "s@/usr/local/android/ndk/platforms/android-21/arch-arm/@../../../../../ndk-android-21@" <"$GLIBC_MODULEMAP.orig" >"$GLIBC_MODULEMAP" &&
 
-rm -f "$SWIFT_INSTALL/usr/bin/swift" &&
 if [[ "$UNAME" == "Darwin" ]]; then
-    SWIFT="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift"
+    SWIFT_BIN="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 else
-    SWIFT="$(which swift)"
-    if [[ "$SWIFT" == "" ]]; then
+    SWIFT_BIN="$(which swift)"
+    if [[ "$SWIFT_BIN" == "" ]]; then
         echo
         echo "*** A swift binary needs to be in your \$PATH to proceed ***"
         echo
         exit 1
     fi
 fi &&
-ln -sf "$SWIFT" "$SWIFT_INSTALL/usr/bin/swift" &&
+rm -rf "$SWIFT_INSTALL/usr/bin" &&
+mkdir "$SWIFT_INSTALL/usr/bin" &&
+ln -s "$SWIFT_BIN"/* "$SWIFT_INSTALL/usr/bin" &&
+rm -f "$SWIFT_INSTALL/usr/bin/swiftc" &&
+ln "$SWIFT_BIN/swiftc" "$SWIFT_INSTALL/usr/bin" &&
 
 echo "Swift path selected:" && ls -l "$SWIFT_INSTALL/usr/bin/swift" && echo &&
 
@@ -116,19 +119,34 @@ cat <<SCRIPT >swift-build.sh &&
 
 SWIFT_INSTALL="$SWIFT_INSTALL"
 export PATH="\$SWIFT_INSTALL/usr/bin:\$PATH"
-export SWIFT_EXEC=~/.gradle/scripts/swiftc-android.sh
 
-HOST_FILE="\$(find . -name AndroidInjectionHost.swift)"
-if [[ "\$HOST_FILE" != "" ]]; then
-    HOST_TMP="/tmp/AndroidInjectionHost.swift"
-    perl <<PERL >"\$HOST_TMP" &&
-use IO::Socket::INET;
-print "let androidInjectionHost = \\"@{[IO::Socket::INET->new(PeerAddr=>'8.8.8.8:53', Proto=>'udp')->sockhost]}\\"\\n";
-PERL
-    diff "\$HOST_FILE" "\$HOST_TMP" || (grep NNN.NNN.NNN.NNN "\$HOST_FILE" >/dev/null && chmod +w "\$HOST_FILE"; mv -f "\$HOST_TMP" "\$HOST_FILE")
-fi
+for lib in \`find "\$PWD"/.build/checkouts -name '*.so'\`; do
+    DIR="\$(dirname \$lib)"
+    LIB="\$(basename \$lib | sed -E 's@^lib|.so\$@@g')"
+    LIBS="\$LIBS, \"-L\$DIR\", \"-l\$LIB\""
+done
 
-swift build "\$@"
+swift build --destination <(cat <<DESTINATION
+{
+    "version": 1,
+    "sdk": "\$SWIFT_INSTALL/ndk-android-21",
+    "toolchain-bin-dir": "\$SWIFT_INSTALL/usr/bin",
+    "target": "armv7-none-linux-androideabi",
+    "dynamic-library-extension": "so",
+    "extra-cc-flags": [
+        "-fPIC",
+    ],
+    "extra-cpp-flags": [
+    ],
+    "extra-swiftc-flags": [
+        "-use-ld=gold",
+        "-tools-directory", "\$SWIFT_INSTALL/usr/$UNAME",
+        "-L\$SWIFT_INSTALL/usr/$UNAME"
+        \$LIBS
+    ]
+}
+DESTINATION
+) "\$@"
 
 SCRIPT
 
@@ -222,10 +240,3 @@ SCRIPT
 chmod +x {generate-swift,swift-build,swiftc-android,copy-libraries,run-tests}.sh &&
 echo Created: $SCRIPTS/{generate-swift,swift-build,swiftc-android,copy-libraries,run-tests}.sh &&
 echo
-
-cd "$SWIFT_INSTALL"
-if [[ ! -d Injection4Android ]]; then
-    git clone https://github.com/SwiftJava/Injection4Android.git
-    echo "Cloned Injection4Android for runtime code injection"
-    echo "See https://github.com/SwiftJava/Injection4Android"
-fi
