@@ -47,7 +47,7 @@ sed -e "s@/usr/local/android/ndk/platforms/android-21/arch-arm/@../../../../../n
 if [[ "$UNAME" == "Darwin" ]]; then
     SWIFT_BIN="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 else
-    SWIFT_BIN="$(which swift)"
+    SWIFT_BIN="$(dirname "$(which swift)")"
     if [[ "$SWIFT_BIN" == "" ]]; then
         echo
         echo "*** A swift binary needs to be in your \$PATH to proceed ***"
@@ -59,7 +59,7 @@ rm -rf "$SWIFT_INSTALL/usr/bin" &&
 mkdir "$SWIFT_INSTALL/usr/bin" &&
 ln -s "$SWIFT_BIN"/* "$SWIFT_INSTALL/usr/bin" &&
 rm -f "$SWIFT_INSTALL/usr/bin/swiftc" &&
-ln "$SWIFT_BIN/swiftc" "$SWIFT_INSTALL/usr/bin" &&
+ln "$SWIFT_BIN/swift" "$SWIFT_INSTALL/usr/bin/swiftc" &&
 
 echo "Swift path selected:" && ls -l "$SWIFT_INSTALL/usr/bin/swift" && echo &&
 
@@ -119,6 +119,10 @@ cat <<SCRIPT >swift-build.sh &&
 
 SWIFT_INSTALL="$SWIFT_INSTALL"
 export PATH="\$SWIFT_INSTALL/usr/bin:\$PATH"
+
+if [[ ! -f ".build/checkouts" ]]; then
+    swift package resolve
+fi
 
 for lib in \`find "\$PWD"/.build/checkouts -name '*.so'\`; do
     DIR="\$(dirname \$lib)"
